@@ -90,9 +90,9 @@ For example:
 
 \- You owe Andrew $30
 
-\- Ketan owes you $15
+\- Keyan owes you $15
 
-\- Satya owes you $20
+\- Saul owes you $20
 
 
 
