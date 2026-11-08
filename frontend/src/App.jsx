@@ -13,29 +13,26 @@ function App() {
   // Temporary friends
   const friends = ['Andrew', 'Ketan', 'Satya']
 
-  // Friends selected for the new event
   const [selectedFriends, setSelectedFriends] = useState([])
+
+  // Stores the ID of the event being edited
+  // null means we are creating a new event
+  const [editingEventId, setEditingEventId] = useState(null)
 
 
   function toggleFriend(friend) {
     if (selectedFriends.includes(friend)) {
-
-      // Remove friend
       setSelectedFriends(
         selectedFriends.filter((name) => name !== friend)
       )
-
     } else {
-
-      // Add friend
       setSelectedFriends([...selectedFriends, friend])
     }
   }
 
 
-  // Checks whether the event information is valid
-  function createEventCheck() {
-
+  // Check if the form is valid
+  function eventCheck() {
     if (eventName.trim() === '') {
       alert('Please enter an event name.')
       return false
@@ -56,37 +53,99 @@ function App() {
       return false
     }
 
-    // Everything passed
     return true
   }
 
 
-  // Actually creates the event
+  // Create a new event
   function createEvent() {
-
-    // Run validation first
-    if (!createEventCheck()) {
+    if (!eventCheck()) {
       return
     }
 
     const newEvent = {
+      id: crypto.randomUUID(),
       name: eventName,
       date: eventDate,
       time: eventTime,
       friends: selectedFriends
     }
 
-    // Add event
     setEvents([...events, newEvent])
 
-    // Clear form
+    clearForm()
+  }
+
+
+  // Delete an event using its ID
+  function deleteEvent(idToDelete) {
+    const updatedEvents = events.filter(
+      (event) => event.id !== idToDelete
+    )
+
+    setEvents(updatedEvents)
+  }
+
+
+  // Load an existing event into the form
+  function startEditEvent(event) {
+    setEventName(event.name)
+    setEventDate(event.date)
+    setEventTime(event.time)
+    setSelectedFriends(event.friends)
+
+    setEditingEventId(event.id)
+
+    setShowForm(true)
+  }
+
+
+  // Save changes to an existing event
+  function saveEdit() {
+    if (!eventCheck()) {
+      return
+    }
+
+    const updatedEvents = events.map((event) => {
+      if (event.id === editingEventId) {
+        return {
+          ...event,
+          name: eventName,
+          date: eventDate,
+          time: eventTime,
+          friends: selectedFriends
+        }
+      }
+
+      return event
+    })
+
+    setEvents(updatedEvents)
+
+    clearForm()
+  }
+
+
+  // Clear all form fields
+  function clearForm() {
     setEventName('')
     setEventDate('')
     setEventTime('')
     setSelectedFriends([])
-
-    // Close form
+    setEditingEventId(null)
     setShowForm(false)
+  }
+
+
+  // Open a fresh Create Event form
+  function openCreateForm() {
+    setEventName('')
+    setEventDate('')
+    setEventTime('')
+    setSelectedFriends([])
+    setEditingEventId(null)
+
+    setShowForm(true)
   }
 
 
@@ -110,9 +169,9 @@ function App() {
 
         <div>
 
-          {events.map((event, index) => (
+          {events.map((event) => (
 
-            <div key={index}>
+            <div key={event.id}>
 
               <h3>{event.name}</h3>
 
@@ -134,28 +193,49 @@ function App() {
 
               </ul>
 
+
+              <button onClick={() => startEditEvent(event)}>
+                Edit
+              </button>
+
+
+              <button onClick={() => deleteEvent(event.id)}>
+                Delete
+              </button>
+
+              <hr />
+
             </div>
 
           ))}
 
         </div>
+
       )}
 
 
       {/* OPEN CREATE EVENT FORM */}
 
-      <button onClick={() => setShowForm(true)}>
-        Create Event
-      </button>
+      {!showForm && (
+
+        <button onClick={openCreateForm}>
+          Create Event
+        </button>
+
+      )}
 
 
-      {/* CREATE EVENT FORM */}
+      {/* CREATE / EDIT EVENT FORM */}
 
       {showForm && (
 
         <div>
 
-          <h2>Create Event</h2>
+          {editingEventId === null ? (
+            <h2>Create Event</h2>
+          ) : (
+            <h2>Edit Event</h2>
+          )}
 
 
           <label>Event Name</label>
@@ -230,12 +310,22 @@ function App() {
           <br />
 
 
-          <button onClick={createEvent}>
-            Create
-          </button>
+          {editingEventId === null ? (
+
+            <button onClick={createEvent}>
+              Create
+            </button>
+
+          ) : (
+
+            <button onClick={saveEdit}>
+              Save Changes
+            </button>
+
+          )}
 
 
-          <button onClick={() => setShowForm(false)}>
+          <button onClick={clearForm}>
             Cancel
           </button>
 
