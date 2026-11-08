@@ -1,7 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 
 function App() {
+
+  // Spring Boot API
+  const API_URL = 'http://localhost:8080/events'
+
   const [showForm, setShowForm] = useState(false)
 
   const [eventName, setEventName] = useState('')
@@ -10,89 +14,212 @@ function App() {
 
   const [events, setEvents] = useState([])
 
-  // Temporary friends
+  // Temporary test friends
+  // These will later be replaced with real registered users
   const friends = ['Andrew', 'Ketan', 'Satya']
 
   const [selectedFriends, setSelectedFriends] = useState([])
 
-  // Stores the ID of the event being edited
-  // null means we are creating a new event
+  // null = creating a new event
+  // an ID = editing an existing event
   const [editingEventId, setEditingEventId] = useState(null)
 
 
-  function toggleFriend(friend) {
-    if (selectedFriends.includes(friend)) {
-      setSelectedFriends(
-        selectedFriends.filter((name) => name !== friend)
-      )
-    } else {
-      setSelectedFriends([...selectedFriends, friend])
+  // ==========================================
+  // LOAD EVENTS FROM SPRING BOOT
+  // ==========================================
+
+  useEffect(() => {
+    fetchEvents()
+  }, [])
+
+
+  async function fetchEvents() {
+
+    try {
+
+      const response = await fetch(API_URL)
+
+      if (!response.ok) {
+        throw new Error('Failed to load events')
+      }
+
+      const data = await response.json()
+
+      setEvents(data)
+
+    } catch (error) {
+
+      console.error('Error loading events:', error)
+
     }
   }
 
 
-  // Check if the form is valid
+  // ==========================================
+  // FRIEND SELECTION
+  // ==========================================
+
+  function toggleFriend(friend) {
+
+    if (selectedFriends.includes(friend)) {
+
+      setSelectedFriends(
+        selectedFriends.filter(
+          (name) => name !== friend
+        )
+      )
+
+    } else {
+
+      setSelectedFriends([
+        ...selectedFriends,
+        friend
+      ])
+
+    }
+  }
+
+
+  // ==========================================
+  // VALIDATION
+  // ==========================================
+
   function eventCheck() {
+
     if (eventName.trim() === '') {
+
       alert('Please enter an event name.')
       return false
+
     }
 
     if (eventDate === '') {
+
       alert('Please choose a date.')
       return false
+
     }
 
     if (eventTime === '') {
+
       alert('Please choose a time.')
       return false
+
     }
 
     if (selectedFriends.length === 0) {
+
       alert('Please invite at least one friend.')
       return false
+
     }
 
     return true
   }
 
 
-  // Create a new event
-  function createEvent() {
+  // ==========================================
+  // CREATE EVENT
+  // ==========================================
+
+  async function createEvent() {
+
     if (!eventCheck()) {
       return
     }
 
     const newEvent = {
-      id: crypto.randomUUID(),
       name: eventName,
       date: eventDate,
       time: eventTime,
       friends: selectedFriends
     }
 
-    setEvents([...events, newEvent])
+    try {
 
-    clearForm()
+      const response = await fetch(API_URL, {
+
+        method: 'POST',
+
+        headers: {
+          'Content-Type': 'application/json'
+        },
+
+        body: JSON.stringify(newEvent)
+
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to create event')
+      }
+
+      const createdEvent = await response.json()
+
+      setEvents([
+        ...events,
+        createdEvent
+      ])
+
+      clearForm()
+
+    } catch (error) {
+
+      console.error('Error creating event:', error)
+
+    }
   }
 
 
-  // Delete an event using its ID
-  function deleteEvent(idToDelete) {
-    const updatedEvents = events.filter(
-      (event) => event.id !== idToDelete
-    )
+  // ==========================================
+  // DELETE EVENT
+  // ==========================================
 
-    setEvents(updatedEvents)
+  async function deleteEvent(idToDelete) {
+
+    try {
+
+      const response = await fetch(
+        `${API_URL}/${idToDelete}`,
+        {
+          method: 'DELETE'
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error('Failed to delete event')
+      }
+
+      setEvents(
+        events.filter(
+          (event) =>
+            event.id !== idToDelete
+        )
+      )
+
+    } catch (error) {
+
+      console.error('Error deleting event:', error)
+
+    }
   }
 
 
-  // Load an existing event into the form
+  // ==========================================
+  // START EDITING EVENT
+  // ==========================================
+
   function startEditEvent(event) {
+
     setEventName(event.name)
+
     setEventDate(event.date)
+
     setEventTime(event.time)
-    setSelectedFriends(event.friends)
+
+    setSelectedFriends(
+      event.friends || []
+    )
 
     setEditingEventId(event.id)
 
@@ -100,61 +227,122 @@ function App() {
   }
 
 
-  // Save changes to an existing event
-  function saveEdit() {
+  // ==========================================
+  // SAVE EDIT
+  // ==========================================
+
+  async function saveEdit() {
+
     if (!eventCheck()) {
       return
     }
 
-    const updatedEvents = events.map((event) => {
-      if (event.id === editingEventId) {
-        return {
-          ...event,
-          name: eventName,
-          date: eventDate,
-          time: eventTime,
-          friends: selectedFriends
+    const updatedEvent = {
+      name: eventName,
+      date: eventDate,
+      time: eventTime,
+      friends: selectedFriends
+    }
+
+    try {
+
+      const response = await fetch(
+        `${API_URL}/${editingEventId}`,
+        {
+
+          method: 'PUT',
+
+          headers: {
+            'Content-Type': 'application/json'
+          },
+
+          body: JSON.stringify(updatedEvent)
+
         }
+      )
+
+      if (!response.ok) {
+        throw new Error('Failed to update event')
       }
 
-      return event
-    })
+      const savedEvent = await response.json()
 
-    setEvents(updatedEvents)
+      setEvents(
 
-    clearForm()
+        events.map((event) =>
+
+          event.id === editingEventId
+            ? savedEvent
+            : event
+
+        )
+
+      )
+
+      clearForm()
+
+    } catch (error) {
+
+      console.error('Error updating event:', error)
+
+    }
   }
 
 
-  // Clear all form fields
+  // ==========================================
+  // CLEAR FORM
+  // ==========================================
+
   function clearForm() {
+
     setEventName('')
+
     setEventDate('')
+
     setEventTime('')
+
     setSelectedFriends([])
+
     setEditingEventId(null)
+
     setShowForm(false)
   }
 
 
-  // Open a fresh Create Event form
+  // ==========================================
+  // OPEN CREATE FORM
+  // ==========================================
+
   function openCreateForm() {
+
     setEventName('')
+
     setEventDate('')
+
     setEventTime('')
+
     setSelectedFriends([])
+
     setEditingEventId(null)
 
     setShowForm(true)
   }
 
 
+  // ==========================================
+  // USER INTERFACE
+  // ==========================================
+
   return (
+
     <div>
 
       <h1>Hangout</h1>
 
-      <p>Plan something with your friends.</p>
+      <p>
+        Plan something with your friends.
+      </p>
+
 
       <h2>Your Events</h2>
 
@@ -173,35 +361,66 @@ function App() {
 
             <div key={event.id}>
 
-              <h3>{event.name}</h3>
+              <h3>
+                {event.name}
+              </h3>
 
-              <p>Date: {event.date}</p>
+              <p>
+                Date: {event.date}
+              </p>
 
-              <p>Time: {event.time}</p>
+              <p>
+                Time: {event.time}
+              </p>
 
-              <p>Invited:</p>
-
-              <ul>
-
-                {event.friends.map((friend) => (
-
-                  <li key={friend}>
-                    {friend}
-                  </li>
-
-                ))}
-
-              </ul>
+              <p>
+                Invited:
+              </p>
 
 
-              <button onClick={() => startEditEvent(event)}>
+              {event.friends &&
+              event.friends.length > 0 ? (
+
+                <ul>
+
+                  {event.friends.map(
+                    (friend) => (
+
+                      <li key={friend}>
+                        {friend}
+                      </li>
+
+                    )
+                  )}
+
+                </ul>
+
+              ) : (
+
+                <p>
+                  No friends selected.
+                </p>
+
+              )}
+
+
+              <button
+                onClick={() =>
+                  startEditEvent(event)
+                }
+              >
                 Edit
               </button>
 
 
-              <button onClick={() => deleteEvent(event.id)}>
+              <button
+                onClick={() =>
+                  deleteEvent(event.id)
+                }
+              >
                 Delete
               </button>
+
 
               <hr />
 
@@ -214,11 +433,13 @@ function App() {
       )}
 
 
-      {/* OPEN CREATE EVENT FORM */}
+      {/* CREATE EVENT BUTTON */}
 
       {!showForm && (
 
-        <button onClick={openCreateForm}>
+        <button
+          onClick={openCreateForm}
+        >
           Create Event
         </button>
 
@@ -231,21 +452,36 @@ function App() {
 
         <div>
 
+
           {editingEventId === null ? (
-            <h2>Create Event</h2>
+
+            <h2>
+              Create Event
+            </h2>
+
           ) : (
-            <h2>Edit Event</h2>
+
+            <h2>
+              Edit Event
+            </h2>
+
           )}
 
 
-          <label>Event Name</label>
+          <label>
+            Event Name
+          </label>
 
           <br />
 
           <input
             type="text"
             value={eventName}
-            onChange={(e) => setEventName(e.target.value)}
+            onChange={(e) =>
+              setEventName(
+                e.target.value
+              )
+            }
           />
 
 
@@ -253,14 +489,20 @@ function App() {
           <br />
 
 
-          <label>Date</label>
+          <label>
+            Date
+          </label>
 
           <br />
 
           <input
             type="date"
             value={eventDate}
-            onChange={(e) => setEventDate(e.target.value)}
+            onChange={(e) =>
+              setEventDate(
+                e.target.value
+              )
+            }
           />
 
 
@@ -268,14 +510,20 @@ function App() {
           <br />
 
 
-          <label>Time</label>
+          <label>
+            Time
+          </label>
 
           <br />
 
           <input
             type="time"
             value={eventTime}
-            onChange={(e) => setEventTime(e.target.value)}
+            onChange={(e) =>
+              setEventTime(
+                e.target.value
+              )
+            }
           />
 
 
@@ -283,7 +531,9 @@ function App() {
           <br />
 
 
-          <h3>Invite Friends</h3>
+          <h3>
+            Invite Friends
+          </h3>
 
 
           {friends.map((friend) => (
@@ -294,8 +544,14 @@ function App() {
 
                 <input
                   type="checkbox"
-                  checked={selectedFriends.includes(friend)}
-                  onChange={() => toggleFriend(friend)}
+                  checked={
+                    selectedFriends.includes(
+                      friend
+                    )
+                  }
+                  onChange={() =>
+                    toggleFriend(friend)
+                  }
                 />
 
                 {friend}
@@ -312,28 +568,36 @@ function App() {
 
           {editingEventId === null ? (
 
-            <button onClick={createEvent}>
+            <button
+              onClick={createEvent}
+            >
               Create
             </button>
 
           ) : (
 
-            <button onClick={saveEdit}>
+            <button
+              onClick={saveEdit}
+            >
               Save Changes
             </button>
 
           )}
 
 
-          <button onClick={clearForm}>
+          <button
+            onClick={clearForm}
+          >
             Cancel
           </button>
+
 
         </div>
 
       )}
 
     </div>
+
   )
 }
 
