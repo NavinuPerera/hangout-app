@@ -1,13 +1,32 @@
 package com.hangout.backend;
 
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.Table;
+
 import java.util.List;
 
+@Entity
+@Table(name = "events")
 public class Event {
 
+    @Id
     private String id;
+
     private String name;
     private String date;
     private String time;
+
+    @ElementCollection
+    @CollectionTable(
+            name = "event_friends",
+            joinColumns = @JoinColumn(name = "event_id")
+    )
+    @Column(name = "friend_name")
     private List<String> friends;
 
     public Event() {
