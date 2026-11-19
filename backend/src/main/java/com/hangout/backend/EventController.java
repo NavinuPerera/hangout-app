@@ -3,6 +3,7 @@ package com.hangout.backend;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,15 +19,18 @@ import java.util.UUID;
 public class EventController {
 
     private final EventRepository eventRepository;
+    private final EventInvitationRepository invitationRepository;
 
     public EventController(
-            EventRepository eventRepository) {
+            EventRepository eventRepository,
+            EventInvitationRepository invitationRepository) {
 
         this.eventRepository = eventRepository;
+        this.invitationRepository = invitationRepository;
     }
 
     // ==========================================
-    // GET CURRENT USER'S EVENTS
+    // GET CURRENT USER'S HOSTED EVENTS
     // ==========================================
 
     @GetMapping
@@ -62,8 +66,8 @@ public class EventController {
 
         event.setId(UUID.randomUUID().toString());
 
-        // Ownership comes from the authenticated
-        // server session, never from the frontend.
+        // Ownership always comes from the logged-in user's
+        // server session, not from frontend data.
         event.setOwnerId(userId);
 
         Event savedEvent =
@@ -76,6 +80,7 @@ public class EventController {
 
     // ==========================================
     // UPDATE EVENT
+    // Only the host can edit an event.
     // ==========================================
 
     @PutMapping("/{id}")
@@ -97,10 +102,12 @@ public class EventController {
         if (event == null) {
             return ResponseEntity
                     .status(HttpStatus.NOT_FOUND)
-                    .body(Map.of(
-                            "error",
-                            "Event not found"
-                    ));
+                    .body(
+                            Map.of(
+                                    "error",
+                                    "Event not found"
+                            )
+                    );
         }
 
         event.setName(updatedEvent.getName());
@@ -116,9 +123,11 @@ public class EventController {
 
     // ==========================================
     // DELETE EVENT
+    // Only the host can delete an event.
     // ==========================================
 
     @DeleteMapping("/{id}")
+    @Transactional
     public ResponseEntity<?> deleteEvent(
             @PathVariable String id,
             HttpSession session) {
@@ -136,11 +145,17 @@ public class EventController {
         if (event == null) {
             return ResponseEntity
                     .status(HttpStatus.NOT_FOUND)
-                    .body(Map.of(
-                            "error",
-                            "Event not found"
-                    ));
+                    .body(
+                            Map.of(
+                                    "error",
+                                    "Event not found"
+                            )
+                    );
         }
+
+        // Delete all invitation / RSVP records for this
+        // event before deleting the event itself.
+        invitationRepository.deleteByEventId(id);
 
         eventRepository.delete(event);
 
@@ -156,9 +171,12 @@ public class EventController {
     // AUTHENTICATION HELPERS
     // ==========================================
 
-    private String getUserId(HttpSession session) {
+    private String getUserId(
+            HttpSession session) {
 
-        return (String) session.getAttribute("userId");
+        return (String) session.getAttribute(
+                "userId"
+        );
     }
 
     private ResponseEntity<Map<String, String>>
@@ -166,9 +184,11 @@ public class EventController {
 
         return ResponseEntity
                 .status(HttpStatus.UNAUTHORIZED)
-                .body(Map.of(
-                        "error",
-                        "Not logged in"
-                ));
+                .body(
+                        Map.of(
+                                "error",
+                                "Not logged in"
+                        )
+                );
     }
 }

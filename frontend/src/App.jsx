@@ -619,6 +619,8 @@ function App() {
   const [eventTime, setEventTime] = useState('')
 
   const [events, setEvents] = useState([])
+  const [acceptedInvitations, setAcceptedInvitations] = useState([])
+  const [eventRsvps, setEventRsvps] = useState({})
 
   // Real accepted friends loaded from the Friends API
   const [friends, setFriends] = useState([])
@@ -638,6 +640,7 @@ function App() {
 
   useEffect(() => {
     fetchEvents()
+    fetchAcceptedInvitations()
     fetchFriends()
   }, [])
 
@@ -697,6 +700,92 @@ function App() {
   }
 
 
+  async function fetchAcceptedInvitations() {
+
+    try {
+
+      const response = await fetch('http://localhost:8080/invitations', {
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to load invitations')
+      }
+
+      const data = await response.json()
+
+      setAcceptedInvitations(
+        (data || []).filter(
+          (invitation) => invitation.status === 'ACCEPTED'
+        )
+      )
+
+    } catch (error) {
+
+      console.error('Error loading accepted invitations:', error)
+      setAcceptedInvitations([])
+
+    }
+  }
+
+
+  async function fetchEventRsvps(eventId) {
+
+    try {
+
+      const response = await fetch(
+        `http://localhost:8080/invitations/events/${eventId}`,
+        {
+          credentials: 'include'
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error('Failed to load RSVP list')
+      }
+
+      const data = await response.json()
+
+      setEventRsvps((current) => ({
+        ...current,
+        [eventId]: data || []
+      }))
+
+    } catch (error) {
+
+      console.error(`Error loading RSVPs for event ${eventId}:`, error)
+
+    }
+  }
+
+
+  const hostedEvents = events.map((event) => ({
+    ...event,
+    participation: 'HOSTING'
+  }))
+
+  const goingEvents = acceptedInvitations
+    .filter((invitation) => invitation.event)
+    .map((invitation) => ({
+      ...invitation.event,
+      participation: 'GOING',
+      host: invitation.sender
+    }))
+
+  const yourEvents = [...hostedEvents, ...goingEvents]
+    .filter(
+      (event, index, allEvents) =>
+        index === allEvents.findIndex(
+          (candidate) => candidate.id === event.id
+        )
+    )
+    .sort((a, b) => {
+      const aValue = `${a.date || ''}T${a.time || ''}`
+      const bValue = `${b.date || ''}T${b.time || ''}`
+      return aValue.localeCompare(bValue)
+    })
+
+
   // ==========================================
   // UI ONLY: modal behavior (Esc closes, page doesn't scroll behind it)
   // Calls your existing clearForm(). No data logic.
@@ -719,6 +808,18 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showForm])
+
+
+  useEffect(() => {
+
+    yourEvents.forEach((event) => {
+      if (!eventRsvps[event.id]) {
+        fetchEventRsvps(event.id)
+      }
+    })
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, acceptedInvitations])
 
 
   // ==========================================
@@ -1340,14 +1441,14 @@ function App() {
             <h2 id="events-title">Your events</h2>
 
             <span className="event-count">
-              {events.length}
-              {events.length === 1 ? ' event' : ' events'}
+              {yourEvents.length}
+              {yourEvents.length === 1 ? ' event' : ' events'}
             </span>
 
           </div>
 
 
-          {events.length === 0 ? (
+          {yourEvents.length === 0 ? (
 
             <div className="empty-state">
 
@@ -1377,7 +1478,7 @@ function App() {
 
             <div className="events-grid">
 
-              {events.map((event) => {
+              {yourEvents.map((event) => {
 
                 const date = parseEventDate(event.date)
                 const when = date ? whenLabel(date) : null
@@ -1422,17 +1523,23 @@ function App() {
 
                     </div>
 
-                    {when && (
-                      <span
-                        className={
-                          when.soon
-                            ? 'when-pill is-soon'
-                            : 'when-pill'
-                        }
-                      >
-                        {when.text}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <span className={event.participation === 'HOSTING' ? 'when-pill is-soon' : 'when-pill'}>
+                        {event.participation === 'HOSTING' ? 'Hosting' : 'Going'}
                       </span>
-                    )}
+
+                      {when && (
+                        <span
+                          className={
+                            when.soon
+                              ? 'when-pill is-soon'
+                              : 'when-pill'
+                          }
+                        >
+                          {when.text}
+                        </span>
+                      )}
+                    </div>
 
                   </div>
 
@@ -1440,64 +1547,80 @@ function App() {
                   <div className="invited-section">
 
                     <p className="invited-label">
-                      Invited
+                      Who's coming
                     </p>
 
-                    {event.friends &&
-                    event.friends.length > 0 ? (
+                    <div className="friend-list">
 
-                      <div className="friend-list">
+                      <span className="friend-chip">
+                        <Avatar
+                          name={
+                            event.participation === 'HOSTING'
+                              ? 'You'
+                              : event.host?.name || event.host?.email || 'Host'
+                          }
+                        />
+                        {event.participation === 'HOSTING'
+                          ? 'You — Host'
+                          : `${event.host?.name || event.host?.email || 'Host'} — Host`}
+                      </span>
 
-                        {event.friends.map((friend) => (
+                      {(eventRsvps[event.id] || []).map((rsvp) => {
 
+                        const guestName =
+                          rsvp.user?.name ||
+                          rsvp.user?.email ||
+                          'Hangout user'
+
+                        const statusLabel =
+                          rsvp.status === 'ACCEPTED'
+                            ? 'Going'
+                            : rsvp.status === 'DECLINED'
+                              ? 'Declined'
+                              : 'Pending'
+
+                        return (
                           <span
                             className="friend-chip"
-                            key={friend}
+                            key={rsvp.invitationId}
                           >
-                            <Avatar name={friend} />
-                            {friend}
+                            <Avatar name={guestName} />
+                            {guestName} — {statusLabel}
                           </span>
+                        )
+                      })}
 
-                        ))}
-
-                      </div>
-
-                    ) : (
-
-                      <p className="invited-empty">
-                        No friends selected.
-                      </p>
-
-                    )}
+                    </div>
 
                   </div>
 
+                  {event.participation === 'HOSTING' && (
+                    <div className="event-actions">
 
-                  <div className="event-actions">
+                      <button
+                        className="secondary-button"
+                        onClick={() =>
+                          startEditEvent(event)
+                        }
+                        aria-label={`Edit ${event.name}`}
+                      >
+                        <Icon name="edit" size={16} />
+                        Edit
+                      </button>
 
-                    <button
-                      className="secondary-button"
-                      onClick={() =>
-                        startEditEvent(event)
-                      }
-                      aria-label={`Edit ${event.name}`}
-                    >
-                      <Icon name="edit" size={16} />
-                      Edit
-                    </button>
+                      <button
+                        className="danger-button"
+                        onClick={() =>
+                          deleteEvent(event.id)
+                        }
+                        aria-label={`Delete ${event.name}`}
+                      >
+                        <Icon name="trash" size={16} />
+                        Delete
+                      </button>
 
-                    <button
-                      className="danger-button"
-                      onClick={() =>
-                        deleteEvent(event.id)
-                      }
-                      aria-label={`Delete ${event.name}`}
-                    >
-                      <Icon name="trash" size={16} />
-                      Delete
-                    </button>
-
-                  </div>
+                    </div>
+                  )}
 
                 </article>
 

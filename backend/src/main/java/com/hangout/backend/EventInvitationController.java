@@ -33,7 +33,6 @@ public class EventInvitationController {
         this.userRepository = userRepository;
     }
 
-
     // =========================================================
     // SEND EVENT INVITATION
     // =========================================================
@@ -44,11 +43,10 @@ public class EventInvitationController {
             @RequestBody EventInvitationRequest request,
             HttpSession session) {
 
-        String currentUserId = (String) session.getAttribute("userId");
+        String currentUserId = getUserId(session);
 
         if (currentUserId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Not logged in."));
+            return unauthorized();
         }
 
         Optional<Event> eventOptional =
@@ -105,7 +103,6 @@ public class EventInvitationController {
                 .body(saved);
     }
 
-
     // =========================================================
     // GET CURRENT USER'S EVENT INVITATIONS
     // =========================================================
@@ -113,11 +110,10 @@ public class EventInvitationController {
     @GetMapping
     public ResponseEntity<?> getMyInvitations(HttpSession session) {
 
-        String currentUserId = (String) session.getAttribute("userId");
+        String currentUserId = getUserId(session);
 
         if (currentUserId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Not logged in."));
+            return unauthorized();
         }
 
         List<EventInvitation> invitations =
@@ -141,27 +137,18 @@ public class EventInvitationController {
             item.put("invitationId", invitation.getId());
             item.put("status", invitation.getStatus());
             item.put("createdAt", invitation.getCreatedAt());
-
             item.put("event", event);
 
             userRepository.findById(invitation.getSenderId())
-                    .ifPresent(sender -> {
-
-                        Map<String, Object> senderInfo = new HashMap<>();
-
-                        senderInfo.put("id", sender.getId());
-                        senderInfo.put("name", sender.getName());
-                        senderInfo.put("email", sender.getEmail());
-
-                        item.put("sender", senderInfo);
-                    });
+                    .ifPresent(sender ->
+                            item.put("sender", safeUser(sender))
+                    );
 
             response.add(item);
         }
 
         return ResponseEntity.ok(response);
     }
-
 
     // =========================================================
     // ACCEPT INVITATION
@@ -179,7 +166,6 @@ public class EventInvitationController {
         );
     }
 
-
     // =========================================================
     // DECLINE INVITATION
     // =========================================================
@@ -196,10 +182,10 @@ public class EventInvitationController {
         );
     }
 
-
     // =========================================================
     // GET RSVPS FOR AN EVENT
-    // Only the event owner can see these.
+    // Host OR an accepted attendee can see the guest list.
+    // Pending/declined invitees cannot see it.
     // =========================================================
 
     @GetMapping("/events/{eventId}")
@@ -207,22 +193,42 @@ public class EventInvitationController {
             @PathVariable String eventId,
             HttpSession session) {
 
-        String currentUserId = (String) session.getAttribute("userId");
+        String currentUserId = getUserId(session);
 
         if (currentUserId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Not logged in."));
+            return unauthorized();
         }
 
         Optional<Event> eventOptional =
-                eventRepository.findByIdAndOwnerId(
-                        eventId,
-                        currentUserId
-                );
+                eventRepository.findById(eventId);
 
         if (eventOptional.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("error", "Event not found."));
+        }
+
+        Event event = eventOptional.get();
+
+        boolean isHost =
+                currentUserId.equals(event.getOwnerId());
+
+        boolean isAcceptedAttendee =
+                invitationRepository
+                        .findByEventIdAndReceiverId(
+                                eventId,
+                                currentUserId
+                        )
+                        .map(invitation ->
+                                "ACCEPTED".equals(invitation.getStatus())
+                        )
+                        .orElse(false);
+
+        if (!isHost && !isAcceptedAttendee) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of(
+                            "error",
+                            "Only the host or accepted attendees can view this guest list."
+                    ));
         }
 
         List<EventInvitation> invitations =
@@ -238,23 +244,15 @@ public class EventInvitationController {
             item.put("status", invitation.getStatus());
 
             userRepository.findById(invitation.getReceiverId())
-                    .ifPresent(user -> {
-
-                        Map<String, Object> userInfo = new HashMap<>();
-
-                        userInfo.put("id", user.getId());
-                        userInfo.put("name", user.getName());
-                        userInfo.put("email", user.getEmail());
-
-                        item.put("user", userInfo);
-                    });
+                    .ifPresent(user ->
+                            item.put("user", safeUser(user))
+                    );
 
             response.add(item);
         }
 
         return ResponseEntity.ok(response);
     }
-
 
     // =========================================================
     // SHARED RSVP UPDATE LOGIC
@@ -265,11 +263,10 @@ public class EventInvitationController {
             String newStatus,
             HttpSession session) {
 
-        String currentUserId = (String) session.getAttribute("userId");
+        String currentUserId = getUserId(session);
 
         if (currentUserId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Not logged in."));
+            return unauthorized();
         }
 
         Optional<EventInvitation> invitationOptional =
@@ -305,5 +302,30 @@ public class EventInvitationController {
                 invitationRepository.save(invitation);
 
         return ResponseEntity.ok(saved);
+    }
+
+    // =========================================================
+    // HELPERS
+    // =========================================================
+
+    private String getUserId(HttpSession session) {
+        return (String) session.getAttribute("userId");
+    }
+
+    private Map<String, Object> safeUser(User user) {
+
+        Map<String, Object> userInfo = new HashMap<>();
+
+        userInfo.put("id", user.getId());
+        userInfo.put("name", user.getName());
+        userInfo.put("email", user.getEmail());
+
+        return userInfo;
+    }
+
+    private ResponseEntity<Map<String, String>> unauthorized() {
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", "Not logged in."));
     }
 }
