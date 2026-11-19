@@ -110,12 +110,325 @@ function whenLabel(date) {
   return null
 }
 
+
+function FriendsPanel() {
+  const FRIENDS_API = 'http://localhost:8080/friends'
+
+  const [friends, setFriends] = useState([])
+  const [incoming, setIncoming] = useState([])
+  const [outgoing, setOutgoing] = useState([])
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [searching, setSearching] = useState(false)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    loadFriendsData()
+  }, [])
+
+  async function api(path, options = {}) {
+    const response = await fetch(`${FRIENDS_API}${path}`, {
+      credentials: 'include',
+      ...options,
+      headers: {
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.headers || {}),
+      },
+    })
+
+    if (!response.ok) {
+      let errorMessage = 'Something went wrong.'
+      try {
+        const body = await response.json()
+        errorMessage = body.error || errorMessage
+      } catch {
+        // Keep the default message when the server has no JSON body.
+      }
+      throw new Error(errorMessage)
+    }
+
+    const contentType = response.headers.get('content-type') || ''
+    return contentType.includes('application/json')
+      ? response.json()
+      : null
+  }
+
+  async function loadFriendsData() {
+    setLoading(true)
+
+    try {
+      const [friendData, incomingData, outgoingData] = await Promise.all([
+        api(''),
+        api('/requests/incoming'),
+        api('/requests/outgoing'),
+      ])
+
+      setFriends(friendData || [])
+      setIncoming(incomingData || [])
+      setOutgoing(outgoingData || [])
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function searchUsers(event) {
+    event.preventDefault()
+
+    const cleaned = query.trim()
+    if (!cleaned) {
+      setResults([])
+      setMessage('Enter a name or email to search.')
+      return
+    }
+
+    setSearching(true)
+    setMessage('')
+
+    try {
+      const data = await api(`/search?query=${encodeURIComponent(cleaned)}`)
+      setResults(data || [])
+
+      if (!data || data.length === 0) {
+        setMessage('No users found.')
+      }
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  async function sendRequest(receiverId) {
+    setMessage('')
+
+    try {
+      await api('/requests', {
+        method: 'POST',
+        body: JSON.stringify({ receiverId }),
+      })
+
+      setMessage('Friend request sent.')
+      setResults((current) =>
+        current.filter((user) => user.id !== receiverId)
+      )
+      await loadFriendsData()
+    } catch (error) {
+      setMessage(error.message)
+    }
+  }
+
+  async function respondToRequest(requestId, action) {
+    setMessage('')
+
+    try {
+      await api(`/requests/${requestId}/${action}`, {
+        method: 'POST',
+      })
+
+      setMessage(
+        action === 'accept'
+          ? 'Friend request accepted.'
+          : 'Friend request rejected.'
+      )
+
+      await loadFriendsData()
+    } catch (error) {
+      setMessage(error.message)
+    }
+  }
+
+  const cardStyle = {
+    background: 'var(--surface, #ffffff)',
+    border: '1px solid var(--border, #e5e7eb)',
+    borderRadius: '18px',
+    padding: '20px',
+  }
+
+  const rowStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '16px',
+    padding: '14px 0',
+    borderBottom: '1px solid var(--border, #e5e7eb)',
+  }
+
+  const userInfo = (user) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+      <Avatar name={user.name || user.email || '?'} />
+      <div style={{ minWidth: 0 }}>
+        <strong style={{ display: 'block' }}>{user.name || 'Hangout user'}</strong>
+        <span style={{ opacity: 0.7, overflowWrap: 'anywhere' }}>{user.email}</span>
+      </div>
+    </div>
+  )
+
+  return (
+    <main className="page" id="friends">
+      <section className="hero-section">
+        <div>
+          <h1>Friends</h1>
+          <p className="hero-description">
+            Find people on Hangout, manage requests, and build your real friends list.
+          </p>
+        </div>
+      </section>
+
+      {message && (
+        <div
+          style={{
+            ...cardStyle,
+            marginBottom: '20px',
+            padding: '14px 18px',
+          }}
+          role="status"
+        >
+          {message}
+        </div>
+      )}
+
+      <section style={{ ...cardStyle, marginBottom: '24px' }}>
+        <div className="section-heading">
+          <div>
+            <h2>Find friends</h2>
+            <p style={{ marginTop: '6px', opacity: 0.7 }}>
+              Search by name or email.
+            </p>
+          </div>
+        </div>
+
+        <form
+          onSubmit={searchUsers}
+          style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}
+        >
+          <input
+            type="search"
+            placeholder="Search name or email..."
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            style={{ flex: '1 1 260px' }}
+          />
+          <button className="primary-button" type="submit" disabled={searching}>
+            {searching ? 'Searching...' : 'Search'}
+          </button>
+        </form>
+
+        {results.length > 0 && (
+          <div style={{ marginTop: '12px' }}>
+            {results.map((user) => (
+              <div style={rowStyle} key={user.id}>
+                {userInfo(user)}
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => sendRequest(user.id)}
+                >
+                  <Icon name="plus" size={16} />
+                  Add friend
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section style={{ ...cardStyle, marginBottom: '24px' }}>
+        <div className="section-heading">
+          <h2>Incoming requests</h2>
+          <span className="event-count">{incoming.length}</span>
+        </div>
+
+        {loading ? (
+          <p>Loading requests...</p>
+        ) : incoming.length === 0 ? (
+          <p style={{ opacity: 0.7 }}>No incoming friend requests.</p>
+        ) : (
+          incoming.map((request) => (
+            <div style={rowStyle} key={request.requestId}>
+              {userInfo(request.user)}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => respondToRequest(request.requestId, 'accept')}
+                >
+                  <Icon name="check" size={16} />
+                  Accept
+                </button>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => respondToRequest(request.requestId, 'reject')}
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </section>
+
+      <section style={{ ...cardStyle, marginBottom: '24px' }}>
+        <div className="section-heading">
+          <h2>Pending requests</h2>
+          <span className="event-count">{outgoing.length}</span>
+        </div>
+
+        {loading ? (
+          <p>Loading requests...</p>
+        ) : outgoing.length === 0 ? (
+          <p style={{ opacity: 0.7 }}>No outgoing requests are pending.</p>
+        ) : (
+          outgoing.map((request) => (
+            <div style={rowStyle} key={request.requestId}>
+              {userInfo(request.user)}
+              <span className="when-pill">Pending</span>
+            </div>
+          ))
+        )}
+      </section>
+
+      <section style={cardStyle}>
+        <div className="section-heading">
+          <h2>Your friends</h2>
+          <span className="event-count">
+            {friends.length} {friends.length === 1 ? 'friend' : 'friends'}
+          </span>
+        </div>
+
+        {loading ? (
+          <p>Loading friends...</p>
+        ) : friends.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon" aria-hidden="true">
+              <Icon name="users" size={32} />
+            </div>
+            <h3>No friends yet</h3>
+            <p>Search for another Hangout account and send a friend request.</p>
+          </div>
+        ) : (
+          friends.map((friend) => (
+            <div style={rowStyle} key={friend.id}>
+              {userInfo(friend)}
+              <span className="when-pill">Friends</span>
+            </div>
+          ))
+        )}
+      </section>
+    </main>
+  )
+}
+
 function App() {
 
   // Spring Boot API
   const API_URL = 'http://localhost:8080/events'
 
   const [showForm, setShowForm] = useState(false)
+  const [activeView, setActiveView] = useState('events')
 
   const [eventName, setEventName] = useState('')
   const [eventDate, setEventDate] = useState('')
@@ -123,9 +436,9 @@ function App() {
 
   const [events, setEvents] = useState([])
 
-  // Temporary test friends
-  // These will later be replaced with real registered users
-  const friends = ['Andrew', 'Ketan', 'Satya']
+  // Real accepted friends loaded from the Friends API
+  const [friends, setFriends] = useState([])
+  const [friendsLoading, setFriendsLoading] = useState(true)
 
   const [selectedFriends, setSelectedFriends] = useState([])
 
@@ -140,7 +453,39 @@ function App() {
 
   useEffect(() => {
     fetchEvents()
+    fetchFriends()
   }, [])
+
+
+  async function fetchFriends() {
+
+    setFriendsLoading(true)
+
+    try {
+
+      const response = await fetch('http://localhost:8080/friends', {
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to load friends')
+      }
+
+      const data = await response.json()
+
+      setFriends(data)
+
+    } catch (error) {
+
+      console.error('Error loading friends:', error)
+      setFriends([])
+
+    } finally {
+
+      setFriendsLoading(false)
+
+    }
+  }
 
 
   async function fetchEvents() {
@@ -484,15 +829,24 @@ function App() {
         </div>
 
         <div className="nav-links">
-          <a className="nav-link" href="#events" aria-current="page">
+          <button
+            type="button"
+            className="nav-link"
+            onClick={() => setActiveView('events')}
+            aria-current={activeView === 'events' ? 'page' : undefined}
+          >
             <Icon name="calendar" />
             Events
-          </a>
-          <span className="nav-link" aria-disabled="true">
+          </button>
+          <button
+            type="button"
+            className="nav-link"
+            onClick={() => setActiveView('friends')}
+            aria-current={activeView === 'friends' ? 'page' : undefined}
+          >
             <Icon name="users" />
             Friends
-            <span className="soon">Soon</span>
-          </span>
+          </button>
           <span className="nav-link" aria-disabled="true">
             <Icon name="wallet" />
             Expenses
@@ -506,6 +860,7 @@ function App() {
       </nav>
 
 
+      {activeView === 'events' ? (
       <main className="page" id="events">
 
         {/* HERO */}
@@ -635,34 +990,53 @@ function App() {
                   aria-labelledby="invite-label"
                 >
 
-                  {friends.map((friend) => (
+                  {friendsLoading ? (
 
-                    <label
-                      className="friend-option"
-                      key={friend}
-                    >
+                    <p className="invited-empty">
+                      Loading friends...
+                    </p>
 
-                      <input
-                        type="checkbox"
-                        checked={
-                          selectedFriends.includes(friend)
-                        }
-                        onChange={() =>
-                          toggleFriend(friend)
-                        }
-                      />
+                  ) : friends.length === 0 ? (
 
-                      <Avatar name={friend} />
+                    <p className="invited-empty">
+                      No friends yet. Add and accept a friend from the Friends page first.
+                    </p>
 
-                      <span>{friend}</span>
+                  ) : (
 
-                      <span className="check">
-                        <Icon name="check" size={16} />
-                      </span>
+                    friends.map((friend) => {
 
-                    </label>
+                      const friendName = friend.name || friend.email
 
-                  ))}
+                      return (
+                        <label
+                          className="friend-option"
+                          key={friend.id}
+                        >
+
+                          <input
+                            type="checkbox"
+                            checked={
+                              selectedFriends.includes(friendName)
+                            }
+                            onChange={() =>
+                              toggleFriend(friendName)
+                            }
+                          />
+
+                          <Avatar name={friendName} />
+
+                          <span>{friendName}</span>
+
+                          <span className="check">
+                            <Icon name="check" size={16} />
+                          </span>
+
+                        </label>
+                      )
+                    })
+
+                  )}
 
                 </div>
 
@@ -886,24 +1260,40 @@ function App() {
         </section>
 
       </main>
+      ) : (
+        <FriendsPanel />
+      )}
 
 
       {/* MOBILE TAB BAR */}
       <nav className="tabbar" aria-label="Main">
-        <a className="tab" href="#events" aria-current="page">
+        <button
+          type="button"
+          className="tab"
+          onClick={() => setActiveView('events')}
+          aria-current={activeView === 'events' ? 'page' : undefined}
+        >
           <Icon name="calendar" size={22} />
           Events
-        </a>
+        </button>
 
-        <span className="tab" aria-disabled="true">
+        <button
+          type="button"
+          className="tab"
+          onClick={() => setActiveView('friends')}
+          aria-current={activeView === 'friends' ? 'page' : undefined}
+        >
           <Icon name="users" size={22} />
           Friends
-        </span>
+        </button>
 
         <button
           type="button"
           className="tab tab-create"
-          onClick={openCreateForm}
+          onClick={() => {
+            setActiveView('events')
+            openCreateForm()
+          }}
           aria-label="Create event"
         >
           <Icon name="plus" size={26} />
