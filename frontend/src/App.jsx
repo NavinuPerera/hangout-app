@@ -42,6 +42,12 @@ const ICONS = {
       <path d="M3 7l2-3h12M16 14h.01" />
     </>
   ),
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 7l9 6 9-6" />
+    </>
+  ),
 }
 
 function Icon({ name, size = 18 }) {
@@ -422,6 +428,184 @@ function FriendsPanel() {
   )
 }
 
+function InvitationsPanel() {
+  const INVITATIONS_API = 'http://localhost:8080/invitations'
+
+  const [invitations, setInvitations] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    loadInvitations()
+  }, [])
+
+  async function loadInvitations() {
+    setLoading(true)
+
+    try {
+      const response = await fetch(INVITATIONS_API, {
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to load invitations')
+      }
+
+      const data = await response.json()
+      setInvitations(data || [])
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function respond(invitationId, action) {
+    setMessage('')
+
+    try {
+      const response = await fetch(
+        `${INVITATIONS_API}/${invitationId}/${action}`,
+        {
+          method: 'POST',
+          credentials: 'include'
+        }
+      )
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to update RSVP.'
+        try {
+          const body = await response.json()
+          errorMessage = body.error || errorMessage
+        } catch {
+          // Keep default message.
+        }
+        throw new Error(errorMessage)
+      }
+
+      setMessage(action === 'accept' ? 'Invitation accepted.' : 'Invitation declined.')
+      await loadInvitations()
+    } catch (error) {
+      setMessage(error.message)
+    }
+  }
+
+  const cardStyle = {
+    background: 'var(--surface, #ffffff)',
+    border: '1px solid var(--border, #e5e7eb)',
+    borderRadius: '18px',
+    padding: '20px',
+  }
+
+  return (
+    <main className="page" id="invitations">
+      <section className="hero-section">
+        <div>
+          <h1>Invitations</h1>
+          <p className="hero-description">
+            Events your friends have invited you to.
+          </p>
+        </div>
+      </section>
+
+      {message && (
+        <div style={{ ...cardStyle, marginBottom: '20px', padding: '14px 18px' }} role="status">
+          {message}
+        </div>
+      )}
+
+      {loading ? (
+        <p>Loading invitations...</p>
+      ) : invitations.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon" aria-hidden="true">
+            <Icon name="mail" size={32} />
+          </div>
+          <h3>No invitations yet</h3>
+          <p>When a friend invites you to an event, it will appear here.</p>
+        </div>
+      ) : (
+        <div className="events-grid">
+          {invitations.map((invitation) => {
+            const event = invitation.event
+            const date = parseEventDate(event?.date)
+            const status = invitation.status || 'PENDING'
+
+            return (
+              <article className="event-card" key={invitation.invitationId}>
+                <div className="event-card-top">
+                  {date && (
+                    <div className="date-badge" aria-hidden="true">
+                      <span className="date-badge-month">
+                        {date.toLocaleDateString([], { month: 'short' })}
+                      </span>
+                      <span className="date-badge-day">{date.getDate()}</span>
+                    </div>
+                  )}
+
+                  <div className="event-card-main">
+                    <h3>{event?.name || 'Event'}</h3>
+                    <div className="event-meta">
+                      <span className="meta-row">
+                        <Icon name="calendar" size={16} />
+                        {date ? formatLongDate(date) : event?.date}
+                      </span>
+                      <span className="meta-row">
+                        <Icon name="clock" size={16} />
+                        {formatTime(event?.time)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <span className={status === 'ACCEPTED' ? 'when-pill is-soon' : 'when-pill'}>
+                    {status}
+                  </span>
+                </div>
+
+                <div className="invited-section">
+                  <p className="invited-label">Invited by</p>
+                  {invitation.sender ? (
+                    <div className="friend-list">
+                      <span className="friend-chip">
+                        <Avatar name={invitation.sender.name || invitation.sender.email} />
+                        {invitation.sender.name || invitation.sender.email}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="invited-empty">Hangout user</p>
+                  )}
+                </div>
+
+                {status === 'PENDING' && (
+                  <div className="event-actions">
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={() => respond(invitation.invitationId, 'accept')}
+                    >
+                      <Icon name="check" size={16} />
+                      Accept
+                    </button>
+
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => respond(invitation.invitationId, 'decline')}
+                    >
+                      Decline
+                    </button>
+                  </div>
+                )}
+              </article>
+            )
+          })}
+        </div>
+      )}
+    </main>
+  )
+}
+
+
 function App() {
 
   // Spring Boot API
@@ -441,6 +625,7 @@ function App() {
   const [friendsLoading, setFriendsLoading] = useState(true)
 
   const [selectedFriends, setSelectedFriends] = useState([])
+  const [selectedFriendIds, setSelectedFriendIds] = useState([])
 
   // null = creating a new event
   // an ID = editing an existing event
@@ -542,19 +727,32 @@ function App() {
 
   function toggleFriend(friend) {
 
-    if (selectedFriends.includes(friend)) {
+    const friendName = friend.name || friend.email
+
+    if (selectedFriendIds.includes(friend.id)) {
+
+      setSelectedFriendIds(
+        selectedFriendIds.filter(
+          (id) => id !== friend.id
+        )
+      )
 
       setSelectedFriends(
         selectedFriends.filter(
-          (name) => name !== friend
+          (name) => name !== friendName
         )
       )
 
     } else {
 
+      setSelectedFriendIds([
+        ...selectedFriendIds,
+        friend.id
+      ])
+
       setSelectedFriends([
         ...selectedFriends,
-        friend
+        friendName
       ])
 
     }
@@ -599,6 +797,38 @@ function App() {
   }
 
 
+  async function createInvitations(eventId) {
+
+    const requests = selectedFriendIds.map((receiverId) =>
+      fetch(`http://localhost:8080/invitations/events/${eventId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({ receiverId })
+      })
+    )
+
+    const responses = await Promise.all(requests)
+
+    const failed = responses.find((response) => !response.ok)
+
+    if (failed) {
+      let errorMessage = 'Event was created, but one or more invitations failed.'
+
+      try {
+        const body = await failed.json()
+        errorMessage = body.error || errorMessage
+      } catch {
+        // Keep default message.
+      }
+
+      throw new Error(errorMessage)
+    }
+  }
+
+
   // ==========================================
   // CREATE EVENT
   // ==========================================
@@ -637,6 +867,8 @@ function App() {
       }
 
       const createdEvent = await response.json()
+
+      await createInvitations(createdEvent.id)
 
       setEvents([
         ...events,
@@ -702,6 +934,14 @@ function App() {
 
     setSelectedFriends(
       event.friends || []
+    )
+
+    setSelectedFriendIds(
+      friends
+        .filter((friend) =>
+          (event.friends || []).includes(friend.name || friend.email)
+        )
+        .map((friend) => friend.id)
     )
 
     setEditingEventId(event.id)
@@ -787,6 +1027,7 @@ function App() {
     setEventTime('')
 
     setSelectedFriends([])
+    setSelectedFriendIds([])
 
     setEditingEventId(null)
 
@@ -807,6 +1048,7 @@ function App() {
     setEventTime('')
 
     setSelectedFriends([])
+    setSelectedFriendIds([])
 
     setEditingEventId(null)
 
@@ -846,6 +1088,15 @@ function App() {
           >
             <Icon name="users" />
             Friends
+          </button>
+          <button
+            type="button"
+            className="nav-link"
+            onClick={() => setActiveView('invitations')}
+            aria-current={activeView === 'invitations' ? 'page' : undefined}
+          >
+            <Icon name="mail" />
+            Invitations
           </button>
           <span className="nav-link" aria-disabled="true">
             <Icon name="wallet" />
@@ -1017,10 +1268,10 @@ function App() {
                           <input
                             type="checkbox"
                             checked={
-                              selectedFriends.includes(friendName)
+                              selectedFriendIds.includes(friend.id)
                             }
                             onChange={() =>
-                              toggleFriend(friendName)
+                              toggleFriend(friend)
                             }
                           />
 
@@ -1260,8 +1511,10 @@ function App() {
         </section>
 
       </main>
-      ) : (
+      ) : activeView === 'friends' ? (
         <FriendsPanel />
+      ) : (
+        <InvitationsPanel />
       )}
 
 
@@ -1285,6 +1538,16 @@ function App() {
         >
           <Icon name="users" size={22} />
           Friends
+        </button>
+
+        <button
+          type="button"
+          className="tab"
+          onClick={() => setActiveView('invitations')}
+          aria-current={activeView === 'invitations' ? 'page' : undefined}
+        >
+          <Icon name="mail" size={22} />
+          Invites
         </button>
 
         <button
