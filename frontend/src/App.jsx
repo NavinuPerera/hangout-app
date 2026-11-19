@@ -147,7 +147,9 @@ function App() {
 
     try {
 
-      const response = await fetch(API_URL)
+      const response = await fetch(API_URL, {
+        credentials: 'include'  
+      })
 
       if (!response.ok) {
         throw new Error('Failed to load events')
@@ -273,15 +275,17 @@ function App() {
 
       const response = await fetch(API_URL, {
 
-        method: 'POST',
+      method: 'POST',
 
-        headers: {
-          'Content-Type': 'application/json'
-        },
+      headers: {
+        'Content-Type': 'application/json'
+      },
 
-        body: JSON.stringify(newEvent)
+      credentials: 'include',
 
-      })
+      body: JSON.stringify(newEvent)
+
+    })
 
       if (!response.ok) {
         throw new Error('Failed to create event')
@@ -313,11 +317,12 @@ function App() {
     try {
 
       const response = await fetch(
-        `${API_URL}/${idToDelete}`,
-        {
-          method: 'DELETE'
-        }
-      )
+      `${API_URL}/${idToDelete}`,
+      {
+        method: 'DELETE',
+        credentials: 'include'
+      }
+    )
 
       if (!response.ok) {
         throw new Error('Failed to delete event')
@@ -380,19 +385,21 @@ function App() {
     try {
 
       const response = await fetch(
-        `${API_URL}/${editingEventId}`,
-        {
+      `${API_URL}/${editingEventId}`,
+      {
 
-          method: 'PUT',
+        method: 'PUT',
 
-          headers: {
-            'Content-Type': 'application/json'
-          },
+        headers: {
+          'Content-Type': 'application/json'
+        },
 
-          body: JSON.stringify(updatedEvent)
+        credentials: 'include',
 
-        }
-      )
+        body: JSON.stringify(updatedEvent)
+
+      }
+    )
 
       if (!response.ok) {
         throw new Error('Failed to update event')

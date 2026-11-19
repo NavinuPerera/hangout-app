@@ -21,6 +21,9 @@ public class Event {
     private String date;
     private String time;
 
+    @Column(name = "owner_id")
+    private String ownerId;
+
     @ElementCollection
     @CollectionTable(
             name = "event_friends",
@@ -37,12 +40,14 @@ public class Event {
             String name,
             String date,
             String time,
+            String ownerId,
             List<String> friends) {
 
         this.id = id;
         this.name = name;
         this.date = date;
         this.time = time;
+        this.ownerId = ownerId;
         this.friends = friends;
     }
 
@@ -76,6 +81,14 @@ public class Event {
 
     public void setTime(String time) {
         this.time = time;
+    }
+
+    public String getOwnerId() {
+        return ownerId;
+    }
+
+    public void setOwnerId(String ownerId) {
+        this.ownerId = ownerId;
     }
 
     public List<String> getFriends() {
