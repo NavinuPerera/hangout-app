@@ -621,6 +621,7 @@ function App() {
   const [events, setEvents] = useState([])
   const [acceptedInvitations, setAcceptedInvitations] = useState([])
   const [eventRsvps, setEventRsvps] = useState({})
+  const [eventExpenses, setEventExpenses] = useState({})
 
   // Real accepted friends loaded from the Friends API
   const [friends, setFriends] = useState([])
@@ -759,6 +760,36 @@ function App() {
   }
 
 
+  async function fetchEventExpenses(eventId) {
+
+    try {
+
+      const response = await fetch(
+        `http://localhost:8080/expenses/event/${eventId}`,
+        {
+          credentials: 'include'
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error('Failed to load expenses')
+      }
+
+      const data = await response.json()
+
+      setEventExpenses((current) => ({
+        ...current,
+        [eventId]: data || []
+      }))
+
+    } catch (error) {
+
+      console.error(`Error loading expenses for event ${eventId}:`, error)
+
+    }
+  }
+
+
   const hostedEvents = events.map((event) => ({
     ...event,
     participation: 'HOSTING'
@@ -815,6 +846,10 @@ function App() {
     yourEvents.forEach((event) => {
       if (!eventRsvps[event.id]) {
         fetchEventRsvps(event.id)
+      }
+
+      if (!eventExpenses[event.id]) {
+        fetchEventExpenses(event.id)
       }
     })
 
@@ -1592,6 +1627,66 @@ function App() {
 
                     </div>
 
+                  </div>
+
+                  <div
+                    className="invited-section"
+                    style={{ marginTop: '16px' }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                        marginBottom: '10px'
+                      }}
+                    >
+                      <p className="invited-label" style={{ margin: 0 }}>
+                        Expenses
+                      </p>
+
+                      <strong>
+                        ${((eventExpenses[event.id] || []).reduce(
+                          (total, expense) => total + Number(expense.amount || 0),
+                          0
+                        )).toFixed(2)}
+                      </strong>
+                    </div>
+
+                    {(eventExpenses[event.id] || []).length === 0 ? (
+                      <p className="invited-empty">
+                        No expenses added yet.
+                      </p>
+                    ) : (
+                      <div style={{ display: 'grid', gap: '8px' }}>
+                        {(eventExpenses[event.id] || []).map((expense) => (
+                          <div
+                            key={expense.id}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              gap: '12px'
+                            }}
+                          >
+                            <span>{expense.description}</span>
+                            <strong>${Number(expense.amount || 0).toFixed(2)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled
+                      style={{ marginTop: '12px' }}
+                      title="Add Expense form is the next checkpoint"
+                    >
+                      <Icon name="plus" size={16} />
+                      Add Expense
+                    </button>
                   </div>
 
                   {event.participation === 'HOSTING' && (
