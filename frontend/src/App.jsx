@@ -622,6 +622,13 @@ function App() {
   const [acceptedInvitations, setAcceptedInvitations] = useState([])
   const [eventRsvps, setEventRsvps] = useState({})
   const [eventExpenses, setEventExpenses] = useState({})
+  const [expenseEvent, setExpenseEvent] = useState(null)
+  const [expenseDescription, setExpenseDescription] = useState('')
+  const [expenseAmount, setExpenseAmount] = useState('')
+  const [expensePaidByUserId, setExpensePaidByUserId] = useState('')
+  const [expenseParticipantIds, setExpenseParticipantIds] = useState([])
+  const [expenseSaving, setExpenseSaving] = useState(false)
+  const [expenseError, setExpenseError] = useState('')
 
   // Real accepted friends loaded from the Friends API
   const [friends, setFriends] = useState([])
@@ -1193,6 +1200,145 @@ function App() {
 
 
   // ==========================================
+  // ADD EXPENSE
+  // ==========================================
+
+  function getExpenseMembers(event) {
+    const members = []
+
+    if (event.participation === 'HOSTING') {
+      members.push({ id: event.ownerId, name: 'You' })
+    } else if (event.host?.id) {
+      members.push({
+        id: event.host.id,
+        name: event.host.name || event.host.email || 'Host'
+      })
+    }
+
+    ;(eventRsvps[event.id] || [])
+      .filter((rsvp) => rsvp.status === 'ACCEPTED' && rsvp.user?.id)
+      .forEach((rsvp) => {
+        if (!members.some((member) => member.id === rsvp.user.id)) {
+          members.push({
+            id: rsvp.user.id,
+            name: rsvp.user.name || rsvp.user.email || 'Hangout user'
+          })
+        }
+      })
+
+    return members
+  }
+
+  function openExpenseForm(event) {
+    const members = getExpenseMembers(event)
+    setExpenseEvent(event)
+    setExpenseDescription('')
+    setExpenseAmount('')
+    setExpensePaidByUserId(members[0]?.id || '')
+    setExpenseParticipantIds(members.map((member) => member.id))
+    setExpenseError('')
+  }
+
+  function closeExpenseForm() {
+    if (expenseSaving) return
+    setExpenseEvent(null)
+    setExpenseDescription('')
+    setExpenseAmount('')
+    setExpensePaidByUserId('')
+    setExpenseParticipantIds([])
+    setExpenseError('')
+  }
+
+  function toggleExpenseParticipant(userId) {
+    setExpenseParticipantIds((current) =>
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : [...current, userId]
+    )
+  }
+
+  async function createExpense() {
+    if (!expenseEvent) return
+
+    const description = expenseDescription.trim()
+    const amount = Number(expenseAmount)
+
+    if (!description) {
+      setExpenseError('Enter an expense description.')
+      return
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setExpenseError('Enter an amount greater than $0.')
+      return
+    }
+
+    if (!expensePaidByUserId) {
+      setExpenseError('Choose who paid.')
+      return
+    }
+
+    if (expenseParticipantIds.length === 0) {
+      setExpenseError('Choose at least one person to split the expense with.')
+      return
+    }
+
+    setExpenseSaving(true)
+    setExpenseError('')
+
+    try {
+      const response = await fetch(
+        `http://localhost:8080/expenses/event/${expenseEvent.id}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            description,
+            amount: amount.toFixed(2),
+            paidByUserId: expensePaidByUserId,
+            participantUserIds: expenseParticipantIds
+          })
+        }
+      )
+
+      if (!response.ok) {
+        let message = 'Failed to add expense.'
+        try {
+          const body = await response.json()
+          message = body.error || message
+        } catch {
+          // Keep default message.
+        }
+        throw new Error(message)
+      }
+
+      await fetchEventExpenses(expenseEvent.id)
+      setExpenseEvent(null)
+      setExpenseDescription('')
+      setExpenseAmount('')
+      setExpensePaidByUserId('')
+      setExpenseParticipantIds([])
+      setExpenseError('')
+    } catch (error) {
+      console.error('Error creating expense:', error)
+      setExpenseError(error.message)
+    } finally {
+      setExpenseSaving(false)
+    }
+  }
+
+  const expenseMembers = expenseEvent ? getExpenseMembers(expenseEvent) : []
+  const expenseAmountNumber = Number(expenseAmount)
+  const expenseShare =
+    Number.isFinite(expenseAmountNumber) &&
+    expenseAmountNumber > 0 &&
+    expenseParticipantIds.length > 0
+      ? expenseAmountNumber / expenseParticipantIds.length
+      : 0
+
+
+  // ==========================================
   // USER INTERFACE
   // ==========================================
 
@@ -1680,9 +1826,8 @@ function App() {
                     <button
                       className="secondary-button"
                       type="button"
-                      disabled
+                      onClick={() => openExpenseForm(event)}
                       style={{ marginTop: '12px' }}
-                      title="Add Expense form is the next checkpoint"
                     >
                       <Icon name="plus" size={16} />
                       Add Expense
@@ -1733,6 +1878,101 @@ function App() {
         <FriendsPanel />
       ) : (
         <InvitationsPanel />
+      )}
+
+
+      {expenseEvent && (
+        <div className="overlay">
+          <section className="form-card" role="dialog" aria-modal="true" aria-labelledby="expense-form-title">
+            <button type="button" className="form-close" onClick={closeExpenseForm} aria-label="Close" disabled={expenseSaving}>
+              <Icon name="close" />
+            </button>
+
+            <div className="form-header">
+              <h2 id="expense-form-title">Add expense</h2>
+              <p>Add a shared expense for {expenseEvent.name}.</p>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="expense-description">Description</label>
+              <input
+                id="expense-description"
+                type="text"
+                autoFocus
+                placeholder="Dinner, tickets, Uber..."
+                value={expenseDescription}
+                onChange={(e) => setExpenseDescription(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="expense-amount">Amount</label>
+              <input
+                id="expense-amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                inputMode="decimal"
+                placeholder="0.00"
+                value={expenseAmount}
+                onChange={(e) => setExpenseAmount(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="expense-payer">Paid by</label>
+              <select
+                id="expense-payer"
+                value={expensePaidByUserId}
+                onChange={(e) => setExpensePaidByUserId(e.target.value)}
+              >
+                {expenseMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <p className="form-label" id="expense-participants-label">Split between</p>
+              <div className="friend-options" role="group" aria-labelledby="expense-participants-label">
+                {expenseMembers.map((member) => (
+                  <label className="friend-option" key={member.id}>
+                    <input
+                      type="checkbox"
+                      checked={expenseParticipantIds.includes(member.id)}
+                      onChange={() => toggleExpenseParticipant(member.id)}
+                    />
+                    <Avatar name={member.name} />
+                    <span>{member.name}</span>
+                    <span className="check"><Icon name="check" size={16} /></span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ padding: '14px 16px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '14px', marginBottom: '16px' }}>
+              <span style={{ opacity: 0.7 }}>Equal split</span>
+              <strong style={{ display: 'block', marginTop: '4px' }}>
+                {expenseParticipantIds.length > 0
+                  ? `$${expenseShare.toFixed(2)} per person`
+                  : 'Select at least one person'}
+              </strong>
+            </div>
+
+            {expenseError && <p role="alert" style={{ marginBottom: '16px' }}>{expenseError}</p>}
+
+            <div className="form-actions">
+              <button className="primary-button" type="button" onClick={createExpense} disabled={expenseSaving}>
+                {expenseSaving ? 'Adding...' : 'Add expense'}
+              </button>
+              <button className="secondary-button" type="button" onClick={closeExpenseForm} disabled={expenseSaving}>
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
 
